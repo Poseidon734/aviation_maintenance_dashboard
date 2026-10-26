@@ -1,0 +1,1182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Fleet Reliability Dashboard</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500&family=Barlow+Condensed:wght@400;500;600;700&family=Barlow:wght@300;400;500&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #0e1116; --bg2: #151a21; --card: #181e26; --border: #262e39; --border2: #36414f;
+    --text: #dbe3ec; --text2: #93a1b2; --text3: #66768a;
+    --good: #4c9aff; --alert: #ff8a3d; --grey: #6b7a8c; --grid: rgba(147,161,178,0.14);
+    --font-display: 'Barlow Condensed', sans-serif; --font-body: 'Barlow', sans-serif; --font-mono: 'JetBrains Mono', monospace;
+  }
+  :root { color-scheme: dark; }
+  /* Light theme: follows the system unless the user picked a theme with the header button (data-theme). */
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) {
+      color-scheme: light;
+      --bg: #f3f5f8; --bg2: #e9edf2; --card: #ffffff; --border: #d5dce5; --border2: #b9c4d1;
+      --text: #1b2430; --text2: #4a5a6e; --text3: #5f6f82;
+      --good: #1f6fe0; --alert: #d9631a; --grey: #8593a4; --grid: rgba(60,75,95,0.12);
+    }
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --bg: #f3f5f8; --bg2: #e9edf2; --card: #ffffff; --border: #d5dce5; --border2: #b9c4d1;
+    --text: #1b2430; --text2: #4a5a6e; --text3: #5f6f82;
+    --good: #1f6fe0; --alert: #d9631a; --grey: #8593a4; --grid: rgba(60,75,95,0.12);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: var(--bg); color: var(--text); font-family: var(--font-body); font-size: 14px; line-height: 1.5; min-height: 100vh; }
+  header { position: sticky; top: 0; z-index: 50; background: var(--bg2); border-bottom: 1px solid var(--border); padding: 10px 16px; display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: center; }
+  .logo { font-family: var(--font-display); font-size: 22px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
+  .logo span { color: var(--good); }
+  nav { display: flex; gap: 4px; flex-wrap: wrap; }
+  nav button, .btn { background: transparent; color: var(--text2); border: 1px solid transparent; padding: 6px 12px; font: 500 13px var(--font-body); letter-spacing: .03em; cursor: pointer; border-radius: 3px; }
+  nav button.active { color: var(--text); border-color: var(--border2); background: var(--card); }
+  nav button:hover, .btn:hover { color: var(--text); }
+  .btn { border-color: var(--border2); background: var(--card); }
+  .filters { display: flex; flex-wrap: wrap; gap: 8px 14px; margin-left: auto; align-items: end; }
+  .filters label, .ctl label { display: flex; flex-direction: column; font-size: 11px; color: var(--text3); text-transform: uppercase; letter-spacing: .06em; gap: 2px; }
+  select, input[type=date], input[type=number] { background: var(--card); color: var(--text); border: 1px solid var(--border2); border-radius: 3px; padding: 4px 6px; font: 13px var(--font-mono); }
+  main { max-width: 1400px; margin: 0 auto; padding: 16px; }
+  section { display: none; } section.active { display: block; }
+  h2 { font-family: var(--font-display); font-weight: 600; font-size: 20px; text-transform: uppercase; letter-spacing: .05em; margin: 20px 0 10px; }
+  h3 { font-family: var(--font-display); font-weight: 500; font-size: 16px; letter-spacing: .04em; text-transform: uppercase; color: var(--text2); margin-bottom: 8px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 4px; padding: 14px; }
+  .grid { display: grid; gap: 12px; }
+  .kpis { grid-template-columns: repeat(auto-fit, minmax(min(100%, 175px), 1fr)); }
+  .card, .grid > * { min-width: 0; }
+  ul.alerts li { overflow-wrap: anywhere; }
+  select { max-width: 100%; }
+  .g2 { grid-template-columns: repeat(auto-fit, minmax(min(100%, 460px), 1fr)); }
+  .g5 { grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); }
+  .kpi .label { font-size: 11px; text-transform: uppercase; letter-spacing: .07em; color: var(--text3); }
+  .kpi .value { font: 500 30px var(--font-mono); margin: 2px 0; }
+  .kpi .sub { font-size: 12px; color: var(--text2); min-height: 18px; }
+  .good { color: var(--good); } .bad { color: var(--alert); } .muted { color: var(--text3); }
+  .spark { width: 100%; height: 28px; margin-top: 4px; display: block; }
+  .chart-box { position: relative; height: 260px; } .chart-box.sm { height: 170px; }
+  .ctl { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: end; margin-bottom: 10px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); }
+  th { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--text3); font-weight: 500; }
+  td.num, th.num { text-align: right; font-family: var(--font-mono); }
+  ul.alerts { list-style: none; display: grid; gap: 6px; }
+  ul.alerts li { padding: 6px 10px; border-left: 3px solid var(--alert); background: var(--bg2); font-size: 13px; }
+  ul.alerts li.ok { border-color: var(--good); }
+  .note { font-size: 12.5px; color: var(--text2); } .note li { margin-left: 18px; margin-bottom: 4px; }
+  .drop { border: 2px dashed var(--border2); border-radius: 4px; padding: 22px; text-align: center; color: var(--text2); cursor: pointer; }
+  .drop.over { border-color: var(--good); color: var(--text); }
+  .pass { color: var(--good); } .fail { color: var(--alert); font-weight: 600; }
+  #rankTable td { white-space: nowrap; } #rankTable th { padding: 6px 6px; } #rankTable td { padding: 6px 6px; }
+  tr.pick { cursor: pointer; } tr.pick:hover, tr.sel { background: var(--bg2); } tr.sel td:first-child { box-shadow: inset 3px 0 var(--good); }
+  .hbar { display: inline-block; width: 44px; height: 8px; background: var(--bg2); vertical-align: middle; margin-left: 6px; }
+  .hbar i { display: block; height: 100%; background: var(--grey); } .hbar i.w { background: var(--alert); }
+  .scroll-x { overflow-x: auto; } .gr { text-transform: none; }
+  th[data-sort] { cursor: pointer; white-space: nowrap; user-select: none; } th[data-sort]:hover { color: var(--text); }
+  input[type=range] { accent-color: var(--good); width: 220px; }
+  .range-val { font: 13px var(--font-mono); color: var(--text); }
+  .heat { border-collapse: separate; border-spacing: 2px; width: auto; }
+  .heat td, .heat th { padding: 3px 8px; text-align: center; font: 12px var(--font-mono); border: 0; }
+  .heat td.cell { min-width: 64px; border-radius: 2px; color: var(--text); }
+  .heat td.cell.rep { outline: 2px solid var(--alert); outline-offset: -2px; font-weight: 600; }
+  #notif { position: fixed; right: 16px; bottom: 16px; z-index: 100; display: grid; gap: 8px; max-width: min(380px, calc(100vw - 32px)); }
+  #notif div { background: var(--card); border: 1px solid var(--border2); border-left: 4px solid var(--good); padding: 10px 12px; border-radius: 3px; font-size: 13px; }
+  #notif div.error { border-left-color: var(--alert); }
+  @media (max-width: 700px) { .filters { margin-left: 0; width: 100%; display: grid; grid-template-columns: 1fr 1fr; } .filters label { min-width: 0; } .kpi .value { font-size: 26px; } main { padding: 12px 16px; } }
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">Fleet<span>Reliability</span></div>
+  <nav id="nav">
+    <button data-section="overview" class="active">Fleet Overview</button>
+    <button data-section="dispatch">Dispatch &amp; Delays</button>
+    <button data-section="components">Components</button>
+    <button data-section="repetitive">Repetitive Defects</button>
+    <button data-section="pareto">Pareto &amp; Alert Levels</button>
+    <button data-section="aircraft">Aircraft</button>
+    <button data-section="data">Data</button>
+  </nav>
+  <button class="btn" id="themeToggle" type="button"></button>
+  <div class="filters" id="filters">
+    <label>From<input type="date" id="fFrom"></label>
+    <label>To<input type="date" id="fTo"></label>
+    <label>ATA<select id="fAta"></select></label>
+    <label>Aircraft<select id="fAircraft"></select></label>
+    <label>Severity<select id="fSeverity"></select></label>
+  </div>
+</header>
+
+<main>
+  <section id="sec-overview" class="active">
+    <h2>Fleet Overview</h2>
+    <div class="grid kpis" id="kpiCards"></div>
+    <div class="grid g2" style="margin-top:12px">
+      <div class="card"><h3>Dispatch Reliability by month</h3><div class="chart-box"><canvas id="chDr"></canvas></div>
+        <p class="note">Grey markers: months below the minimum exposure threshold (excluded).</p></div>
+      <div class="card"><h3>Active alerts</h3><ul class="alerts" id="alertList"></ul></div>
+    </div>
+    <div class="card" style="margin-top:12px"><h3>ATA chapter Pareto (events)</h3>
+      <div class="chart-box"><canvas id="chParetoMini"></canvas></div></div>
+  </section>
+
+  <section id="sec-dispatch">
+    <h2>Dispatch &amp; Delays</h2>
+    <div class="card" style="margin-bottom:12px"><div class="ctl">
+      <label>Dispatch Reliability target %<input type="number" id="dTarget" min="90" max="100" step="0.1" value="99"></label>
+      <label>Delay rate per<select id="dScale"><option value="100">100 departures</option><option value="1000">1,000 departures</option></select></label>
+    </div></div>
+    <div class="grid kpis" id="delayCards"></div>
+    <div class="grid g2" style="margin-top:12px">
+      <div class="card"><h3>Dispatch Reliability by month</h3><div class="chart-box"><canvas id="chDDr"></canvas></div></div>
+      <div class="card"><h3 id="dTdrTitle">Technical delay rate by month</h3><div class="chart-box"><canvas id="chDTdr"></canvas></div></div>
+      <div class="card"><h3>Technical delay minutes by ATA</h3><div class="chart-box"><canvas id="chDMin"></canvas></div></div>
+      <div class="card"><h3>Technical delays by fault severity</h3><div class="chart-box"><canvas id="chDSev"></canvas></div></div>
+    </div>
+    <div class="card" style="margin-top:12px"><h3 id="dTopTitle">Top 10 aircraft by technical delay rate</h3>
+      <div class="chart-box" style="height:340px"><canvas id="chDTop"></canvas></div>
+      <p class="note" id="dTopNote"></p></div>
+  </section>
+
+  <section id="sec-components">
+    <h2>Components (URR / MTBUR)</h2>
+    <div class="card"><h3>Part numbers</h3>
+      <div class="scroll-x"><table id="compTable"></table></div>
+      <ul class="note" style="margin-top:8px">
+        <li>URR and MTBUR use total fleet FH for the period as exposure (one unit of each part number per aircraft assumed).</li>
+        <li>Weibull β: rank regression (Bernard median ranks) on FH between consecutive unscheduled removals of the same part number on the same aircraft. Suspensions (units not yet failed) are not modelled, so β may be biased.</li>
+        <li>β &lt; 0.9 infant mortality · 0.9–1.1 random · &gt; 1.1 wear-out.</li></ul></div>
+    <div class="grid g2" style="margin-top:12px">
+      <div class="card"><h3>MTBUR by part number (FH)</h3><div class="chart-box"><canvas id="chCMtbur"></canvas></div>
+        <p class="note" id="mtburNote"></p></div>
+      <div class="card"><h3>Jack-Knife: removal rate vs MTTR</h3><div class="chart-box"><canvas id="chCJk"></canvas></div>
+        <p class="note">Dashed lines are the means across part numbers. Orange = above both means (high frequency and long repairs).</p></div>
+    </div>
+    <div class="card" style="margin-top:12px"><div class="ctl"><label>Reliability curve for<select id="cPn"></select></label></div>
+      <div class="chart-box"><canvas id="chCRel"></canvas></div>
+      <p class="note" id="relNote"></p></div>
+  </section>
+
+  <section id="sec-repetitive">
+    <h2>Repetitive Defects</h2>
+    <div class="card"><div class="ctl">
+      <label>Within days (1st to 3rd event)<span><input type="range" id="rDays" min="1" max="60" value="5"> <span class="range-val" id="rDaysVal">5</span></span></label>
+      <label>Or within cycles<span><input type="range" id="rCycles" min="1" max="100" value="10"> <span class="range-val" id="rCyclesVal">10</span></span></label>
+    </div>
+    <p class="note">An episode is 3 or more events of the same ATA on one aircraft where the 1st and 3rd are within the day or cycle limit. Overlapping windows merge into one episode.</p></div>
+    <div class="grid kpis" id="repCards" style="margin-top:12px"></div>
+    <div class="card" style="margin-top:12px"><h3>Episodes</h3><div class="scroll-x"><table id="repTable"></table></div></div>
+    <div class="card" style="margin-top:12px"><h3>Events per aircraft and ATA (20 aircraft with most events)</h3>
+      <div class="scroll-x"><table class="heat" id="heatmap"></table></div>
+      <p class="note">Darker cell = more events. Orange outline and ▲ mark aircraft/ATA pairs with a repetitive episode under the current limits.</p></div>
+  </section>
+
+  <section id="sec-pareto">
+    <h2>Pareto &amp; Alert Levels</h2>
+    <div class="card">
+      <div class="ctl">
+        <label>Dimension<select id="pDim"><option value="ata">ATA chapter</option><option value="pn">Part number</option></select></label>
+        <label>Metric<select id="pMetric">
+          <option value="events">Events</option><option value="techDelays">Technical delays</option>
+          <option value="delayMinutes">Delay minutes</option><option value="removals">Unscheduled removals</option></select></label>
+      </div>
+      <div class="grid g2">
+        <div><h3>Count (descending)</h3><div class="chart-box sm"><canvas id="chPBar"></canvas></div></div>
+        <div><h3>Cumulative % (80% reference)</h3><div class="chart-box sm"><canvas id="chPCum"></canvas></div></div>
+      </div>
+    </div>
+    <h2>Alert levels (UCL) by ATA</h2>
+    <div class="card" style="margin-bottom:12px">
+      <div class="ctl">
+        <label>Sigma multiplier k<select id="uK"><option value="2">2</option><option value="3" selected>3</option></select></label>
+        <label>Min monthly fleet FH<input type="number" id="uMin" min="0" step="500" value="5000"></label>
+      </div>
+      <p class="note">Defect rate per 1,000 fleet flight hours. UCL = mean + k·sigma over the 2024 base months that meet the exposure threshold. Orange points exceed the UCL; grey points have insufficient exposure and are excluded.</p>
+    </div>
+    <div class="grid g5" id="uclGrid"></div>
+  </section>
+
+  <section id="sec-aircraft">
+    <h2>Aircraft</h2>
+    <div class="grid kpis" id="fleetQualityCards"></div>
+    <div class="grid g2" style="margin-top:12px">
+      <div class="card"><h3>Fleet Health Index ranking</h3><div class="scroll-x"><table id="rankTable"></table></div><p class="note" id="rankNote"></p></div>
+      <div class="card"><h3>Utilization vs defect rate</h3><div class="chart-box" style="height:380px"><canvas id="chAcScatter"></canvas></div>
+        <p class="note">One point per aircraft. Orange = worst 10 % by Health Index, blue = selected aircraft. Utilization is flight hours per active day because FH per cycle is nearly identical across aircraft in this dataset (about 1.99). Hours per day are not physically plausible (see Data tab). The downward trend is largely an exposure artifact: every aircraft logs a similar number of events whatever its hours, so more hours means a lower rate.</p></div>
+    </div>
+    <h2>Aircraft detail</h2>
+    <div class="card"><div class="ctl"><label>Aircraft<select id="aAircraft"></select></label></div>
+      <div class="grid kpis" id="acCards"></div>
+      <h3 style="margin-top:12px">Events per month</h3><div class="chart-box sm"><canvas id="chAcMonthly"></canvas></div></div>
+    <div class="grid g2" style="margin-top:12px">
+      <div class="card"><div class="ctl"><label>Condition metric<select id="qMetric"><option value="safety">Safety score</option><option value="inspection">Inspection score</option></select></label></div>
+        <h3>Condition trend (monthly mean ± 1 sd)</h3><div class="chart-box"><canvas id="chQuality"></canvas></div>
+        <p class="note">Months with fewer than 20 events are omitted. Filters apply.</p></div>
+      <div class="card"><h3>Defect rate by ATA (per 1,000 FH)</h3><div class="chart-box"><canvas id="chAtaRate"></canvas></div></div>
+    </div>
+  </section>
+
+  <section id="sec-data">
+    <h2>Data</h2>
+    <div class="card">
+      <div class="drop" id="drop">Drop a fault-maintenance CSV here or click to select a file
+        <input type="file" id="fileInput" accept=".csv" hidden></div>
+      <p class="note" id="loadStatus" style="margin-top:8px"></p>
+    </div>
+    <div class="grid g2" style="margin-top:12px">
+      <div class="card"><h3>Data quality notes</h3><ul class="note" id="qualityNotes"></ul></div>
+      <div class="card"><h3>KPI definitions and assumptions</h3><ul class="note">
+        <li><b>Departures</b> = Fleet_Avg_Monthly_Departures × active months per aircraft (days between first and last event / 30.4375).</li>
+        <li><b>Dispatch Reliability %</b> = (departures − technical delays − technical cancellations) / departures × 100. No cancellation field exists, so cancellations = 0.</li>
+        <li><b>Technical delay</b> = Is_Technical_Delay and Delay_Minutes &gt; 15 (IATA). Rate per 100 or 1,000 departures.</li>
+        <li><b>URR</b> = unscheduled removals / fleet FH × 1,000. <b>MTBUR</b> = fleet FH / unscheduled removals. Assumes one unit of each part number per aircraft.</li>
+        <li><b>Flight hours / cycles per period</b> = linear interpolation of cumulative values between events, clipped to the period.</li>
+        <li><b>Repetitive defect</b> = 3 events of the same ATA on one aircraft within N days or M cycles (1st to 3rd). Overlapping windows are merged into one episode.</li>
+        <li><b>UCL</b> = mean + k·sigma of monthly defect rate per 1,000 FH (2024 base, months meeting the exposure threshold).</li>
+        <li><b>Alternative departure methods</b> (information only): <span id="altDepartures"></span></li>
+      </ul></div>
+    </div>
+    <div class="card" style="margin-top:12px"><h3>Self-test against reference values</h3>
+      <p class="note">Open this page with <code>?selftest</code> to compare unfiltered KPIs with <code>.tmp/kpi_golden.json</code> (generated by <code>execution/verify_aviation_kpis.py</code>). Requires serving over HTTP.</p>
+      <table id="selftestTable" style="margin-top:8px"></table></div>
+  </section>
+</main>
+<div id="notif"></div>
+
+<script>
+(function () {
+'use strict';
+
+/* ---------- Constants ---------- */
+const REQUIRED = ['Aircraft_ID', 'Event_Date', 'ATA_Chapter', 'Is_Technical_Delay', 'Unscheduled_Removal', 'Part_Number',
+  'Cumulative_Flight_Hours', 'Cumulative_Flight_Cycles', 'Fleet_Avg_Monthly_Departures', 'Delay_Minutes'];
+const CSV_URL = 'aviation_fault_maintenance_dataset_enriched.csv';
+const DAYS_PER_MONTH = 30.4375;
+const TECH_DELAY_MIN = 15;
+const BASE_YEAR = 2024;
+const REP_DAYS = 5, REP_CYCLES = 10, NEAR_DAYS = 30;
+const state = {
+  rows: [], aircraft: new Map(), subsystem: new Map(),
+  filters: { from: null, to: null, ata: 'all', aircraft: 'all', severity: 'all' },
+  params: { target: 99.0, k: 3, minFh: 5000, tdrScale: 100 },
+  pareto: { dim: 'ata', metric: 'events' },
+  rep: { days: REP_DAYS, cycles: REP_CYCLES },
+  comp: { sortKey: 'removals', sortDir: -1, pn: null },
+  acSel: null, qMetric: 'safety',
+  bounds: { min: 0, max: 0 }
+};
+const charts = {};
+const $ = id => document.getElementById(id);
+
+/* ---------- Utilities ---------- */
+const escapeHtml = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const fmt = (n, d = 0) => (n === null || n === undefined || !isFinite(n)) ? '—' :
+  n.toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d });
+const dayNum = iso => Date.parse(iso + 'T00:00:00Z') / 864e5;
+const dayIso = n => new Date(n * 864e5).toISOString().slice(0, 10);
+const monthKey = day => { const d = new Date(day * 864e5); return d.getUTCFullYear() * 12 + d.getUTCMonth(); };
+const monthStart = key => Date.UTC(Math.floor(key / 12), key % 12, 1) / 864e5;
+const monthLabel = key => new Date(monthStart(key) * 864e5).toLocaleString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' });
+const cssVar = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const mean = a => a.reduce((s, x) => s + x, 0) / a.length;
+const sampleSd = a => { const m = mean(a); return Math.sqrt(a.reduce((s, x) => s + (x - m) ** 2, 0) / (a.length - 1)); };
+
+function showNotif(type, message) {
+  const el = document.createElement('div');
+  el.className = type; el.textContent = message;
+  $('notif').appendChild(el);
+  setTimeout(() => el.remove(), 5000);
+}
+function destroyChart(id) { try { charts[id] && charts[id].destroy(); } catch (e) { /* already destroyed */ } delete charts[id]; }
+
+/* ---------- Loading and normalization ---------- */
+function parseCSV(text) {
+  const lines = text.replace(/\r/g, '').split('\n').filter(l => l.trim());
+  const split = line => {
+    const out = []; let cur = '', q = false;
+    for (const ch of line) {
+      if (ch === '"') q = !q; else if (ch === ',' && !q) { out.push(cur); cur = ''; } else cur += ch;
+    }
+    out.push(cur); return out;
+  };
+  const header = split(lines[0]).map(h => h.trim());
+  return { header, records: lines.slice(1).map(l => { const v = split(l); const o = {}; header.forEach((h, i) => o[h] = v[i]); return o; }) };
+}
+function validateColumns(header) {
+  const missing = REQUIRED.filter(c => !header.includes(c));
+  if (missing.length) throw new Error('Missing required columns: ' + missing.join(', '));
+}
+function normalizeRows(records) {
+  return records.map((r, i) => {
+    const row = {
+      id: i, aircraft: String(r.Aircraft_ID).trim(), day: dayNum(r.Event_Date), ata: String(r.ATA_Chapter).trim(),
+      isTech: String(r.Is_Technical_Delay).toLowerCase() === 'true', removal: String(r.Unscheduled_Removal).toLowerCase() === 'true',
+      pn: String(r.Part_Number).trim(), fh: +r.Cumulative_Flight_Hours, fc: +r.Cumulative_Flight_Cycles,
+      dep: +r.Fleet_Avg_Monthly_Departures, delay: +r.Delay_Minutes || 0,
+      repair: numOrNull(r.Repair_Time_Hours), inspection: numOrNull(r.Inspection_Score), safety: numOrNull(r.Safety_Score),
+      effectiveness: r.Maintenance_Effectiveness ? String(r.Maintenance_Effectiveness).trim() : '',
+      severity: r.Fault_Severity ? String(r.Fault_Severity).trim() : 'n/a', subsystem: r.Subsystem ? String(r.Subsystem).trim() : ''
+    };
+    if (!isFinite(row.day) || !isFinite(row.fh) || !isFinite(row.fc) || !isFinite(row.dep)) {
+      throw new Error('Invalid value in data row ' + (i + 2) + ' (date, hours, cycles or departures).');
+    }
+    row.techDelay = row.isTech && row.delay > TECH_DELAY_MIN;
+    return row;
+  }).sort((a, b) => a.aircraft.localeCompare(b.aircraft) || a.day - b.day);
+}
+
+function ingest(text) {
+  const { header, records } = parseCSV(text);
+  validateColumns(header);
+  state.rows = normalizeRows(records);
+  state.aircraft = buildAircraftIndex(state.rows);
+  state.subsystem = new Map(state.rows.filter(r => r.subsystem).map(r => [r.ata, r.subsystem]));
+  const days = state.rows.map(r => r.day);
+  state.bounds = { min: Math.min(...days), max: Math.max(...days) };
+  state.filters = { from: state.bounds.min, to: state.bounds.max, ata: 'all', aircraft: 'all', severity: 'all' };
+  populateFilters();
+  renderAll();
+  $('loadStatus').textContent = state.rows.length.toLocaleString('en-US') + ' events · ' + state.aircraft.size + ' aircraft · ' +
+    dayIso(state.bounds.min) + ' to ' + dayIso(state.bounds.max);
+}
+async function loadData() {
+  try {
+    const res = await fetch(CSV_URL);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    ingest(await res.text());
+  } catch (e) {
+    showNotif('error', 'Could not load the default CSV (' + e.message + '). Use the Data tab to load a file.');
+    showSection('data');
+  }
+}
+
+/* ---------- Exposure ---------- */
+function buildAircraftIndex(rows) {
+  const map = new Map();
+  rows.forEach(r => {
+    if (!map.has(r.aircraft)) map.set(r.aircraft, { id: r.aircraft, t: [], h: [], c: [], dep: r.dep });
+    const a = map.get(r.aircraft); a.t.push(r.day); a.h.push(r.fh); a.c.push(r.fc);
+  });
+  return map;
+}
+function interpolate(xs, ys, x) {
+  if (x <= xs[0]) return ys[0];
+  const last = xs.length - 1;
+  if (x >= xs[last]) return ys[last];
+  let lo = 0, hi = last;
+  while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (xs[mid] <= x) lo = mid; else hi = mid; }
+  return xs[hi] === xs[lo] ? ys[lo] : ys[lo] + (ys[hi] - ys[lo]) * (x - xs[lo]) / (xs[hi] - xs[lo]);
+}
+/** Fleet exposure in [lo, hi) days for the selected aircraft: FH, FC and departures. */
+function calcExposure(lo, hi, aircraftFilter) {
+  const out = { fh: 0, fc: 0, departures: 0 };
+  state.aircraft.forEach(a => {
+    if (aircraftFilter !== 'all' && a.id !== aircraftFilter) return;
+    const from = Math.max(lo, a.t[0]), to = Math.min(hi, a.t[a.t.length - 1]);
+    if (to <= from) return;
+    out.fh += interpolate(a.t, a.h, to) - interpolate(a.t, a.h, from);
+    out.fc += interpolate(a.t, a.c, to) - interpolate(a.t, a.c, from);
+    out.departures += a.dep * (to - from) / DAYS_PER_MONTH;
+  });
+  return out;
+}
+
+/* ---------- Event selection ---------- */
+function selectEvents(f, opts = {}) {
+  return state.rows.filter(r =>
+    (opts.ignoreDate || (r.day >= f.from && r.day <= f.to)) &&
+    (f.ata === 'all' || r.ata === f.ata) &&
+    (f.aircraft === 'all' || r.aircraft === f.aircraft) &&
+    (f.severity === 'all' || r.severity === f.severity));
+}
+
+/* ---------- Pure KPI calculations ---------- */
+function calcKpis(events, expo, tdrScale) {
+  const tech = events.filter(r => r.techDelay).length;
+  const removals = events.filter(r => r.removal).length;
+  const hasDep = expo.departures > 0;
+  return {
+    tech, removals, expo,
+    dr: hasDep ? 100 * (1 - tech / expo.departures) : null,
+    tdr: hasDep ? tdrScale * tech / expo.departures : null,
+    urr: expo.fh > 0 ? 1000 * removals / expo.fh : null,
+    mtbur: removals > 0 && expo.fh > 0 ? expo.fh / removals : null
+  };
+}
+function calcMonthlySeries(f, minFh) {
+  const events = selectEvents(f, { ignoreDate: true });
+  const startKey = monthKey(state.bounds.min), endKey = monthKey(state.bounds.max);
+  const series = [];
+  for (let key = startKey; key <= endKey; key++) {
+    const lo = monthStart(key), hi = monthStart(key + 1);
+    const expo = calcExposure(lo, hi, f.aircraft);
+    const monthEvents = events.filter(r => r.day >= lo && r.day < hi);
+    series.push({ key, label: monthLabel(key), year: Math.floor(key / 12), events: monthEvents, expo, valid: expo.fh >= minFh,
+      kpi: calcKpis(monthEvents, expo, state.params.tdrScale) });
+  }
+  return series;
+}
+function calcUcl(series, ata, k) {
+  const rates = series.map(m => m.valid ? 1000 * m.events.filter(r => r.ata === ata).length / m.expo.fh : null);
+  const base = rates.filter((r, i) => r !== null && series[i].year === BASE_YEAR);
+  if (base.length < 3) return { rates, mu: null, sigma: null, ucl: null };
+  const mu = mean(base), sigma = sampleSd(base);
+  return { rates, mu, sigma, ucl: mu + k * sigma };
+}
+function calcPareto(events, dim, metric) {
+  const totals = new Map();
+  events.forEach(r => {
+    const key = dim === 'ata' ? r.ata : r.pn;
+    const value = metric === 'events' ? 1 : metric === 'techDelays' ? +r.techDelay : metric === 'delayMinutes' ? (r.techDelay ? r.delay : 0) : +r.removal;
+    totals.set(key, (totals.get(key) || 0) + value);
+  });
+  const sorted = [...totals].sort((a, b) => b[1] - a[1]);
+  const sum = sorted.reduce((s, x) => s + x[1], 0);
+  let acc = 0;
+  return sorted.map(([key, value]) => { acc += value; return { key, value, cumPct: sum ? 100 * acc / sum : 0 }; });
+}
+/** Repetitive-defect episodes: 1st→3rd event of one aircraft+ATA within maxDays or maxCycles; overlapping windows merged. */
+function calcRepetitive(events, maxDays, maxCycles) {
+  const groups = new Map();
+  events.forEach(r => { const k = r.aircraft + '|' + r.ata; (groups.get(k) || groups.set(k, []).get(k)).push(r); });
+  const episodes = []; let windows = 0;
+  groups.forEach(list => {
+    list.sort((a, b) => a.day - b.day);
+    let cur = null;
+    for (let i = 0; i + 2 < list.length; i++) {
+      const hit = (maxDays !== null && list[i + 2].day - list[i].day <= maxDays) || (maxCycles !== null && list[i + 2].fc - list[i].fc <= maxCycles);
+      if (!hit) continue;
+      windows++;
+      if (cur && i <= cur.end) cur.end = i + 2;
+      else { cur = { aircraft: list[i].aircraft, ata: list[i].ata, start: i, end: i + 2, list }; episodes.push(cur); }
+    }
+  });
+  return { windows, episodes: episodes.map(e => ({ aircraft: e.aircraft, ata: e.ata, count: e.end - e.start + 1,
+    from: e.list[e.start].day, to: e.list[e.end].day,
+    days: e.list[e.end].day - e.list[e.start].day, cycles: e.list[e.end].fc - e.list[e.start].fc })) };
+}
+
+/* ---------- Pure calculations: components, delays ---------- */
+const weibullStrategy = beta => beta < 0.9 ? 'Infant mortality' : beta <= 1.1 ? 'Random' : 'Wear-out';
+/** Rank regression (Bernard median ranks, y on x) of observed intervals; null when fewer than 3 usable intervals. */
+function calcWeibull(intervals) {
+  const t = intervals.filter(x => x > 0).sort((a, b) => a - b), n = t.length;
+  if (n < 3) return null;
+  const xs = t.map(Math.log);
+  const ranks = t.map((_, i) => (i + 1 - 0.3) / (n + 0.4));
+  const ys = ranks.map(F => Math.log(-Math.log(1 - F)));
+  const mx = mean(xs), my = mean(ys);
+  let sxy = 0, sxx = 0;
+  xs.forEach((x, i) => { sxy += (x - mx) * (ys[i] - my); sxx += (x - mx) ** 2; });
+  const beta = sxy / sxx;
+  return { beta, eta: Math.exp(mx - my / beta), n, points: t.map((x, i) => ({ t: x, F: ranks[i] })), strategy: weibullStrategy(beta) };
+}
+/** FH between consecutive unscheduled removals of one part number on the same aircraft (rows are sorted by aircraft, day). */
+function removalIntervals(removalEvents) {
+  const last = new Map(), out = [];
+  removalEvents.forEach(r => { if (last.has(r.aircraft)) out.push(r.fh - last.get(r.aircraft)); last.set(r.aircraft, r.fh); });
+  return out;
+}
+function calcComponents(events, fleetFh) {
+  const byPn = new Map();
+  events.forEach(r => (byPn.get(r.pn) || byPn.set(r.pn, []).get(r.pn)).push(r));
+  return [...byPn].map(([pn, list]) => {
+    const removalEvents = list.filter(r => r.removal);
+    const repairs = list.filter(r => r.repair !== null).map(r => r.repair);
+    const weibull = calcWeibull(removalIntervals(removalEvents));
+    return { pn, ata: list[0].ata, events: list.length, removals: removalEvents.length,
+      urr: fleetFh > 0 ? 1000 * removalEvents.length / fleetFh : null,
+      mtbur: removalEvents.length ? fleetFh / removalEvents.length : null,
+      mttr: repairs.length ? mean(repairs) : null, weibull, beta: weibull ? weibull.beta : null, eta: weibull ? weibull.eta : null, strategy: weibull ? weibull.strategy : '—' };
+  });
+}
+function calcTopAircraftTdr(f, scale, limit) {
+  const out = [];
+  state.aircraft.forEach(a => {
+    if (f.aircraft !== 'all' && a.id !== f.aircraft) return;
+    const expo = calcExposure(f.from, f.to + 1, a.id);
+    if (expo.departures < MIN_ACTIVE_MONTHS * a.dep) return;
+    const tech = selectEvents({ ...f, aircraft: a.id }).filter(r => r.techDelay).length;
+    out.push({ aircraft: a.id, tdr: scale * tech / expo.departures, tech });
+  });
+  return out.sort((x, y) => y.tdr - x.tdr).slice(0, limit);
+}
+
+/* ---------- Pure calculations: fleet health, condition quality ---------- */
+const MIN_ACTIVE_MONTHS = 3, MIN_QUALITY_EVENTS = 20;
+const HEALTH_WEIGHTS = [
+  { key: 'defectRate', label: 'defects /1,000 FH', weight: 35 },
+  { key: 'tdr', label: 'technical delays /100 dep.', weight: 25 },
+  { key: 'urr', label: 'URR /1,000 FH', weight: 20 },
+  { key: 'highPct', label: 'high-severity share', weight: 10 },
+  { key: 'safetyGap', label: '100 − safety score', weight: 10 }
+];
+const numOrNull = v => (v !== undefined && v !== '' && isFinite(+v)) ? +v : null;
+const meanOrNull = list => list.length ? mean(list) : null;
+
+/** 1-based ranks; tied values share the average of the ranks they span. */
+function averageRanks(values) {
+  const order = values.map((_, i) => i).sort((a, b) => values[a] - values[b]);
+  const ranks = new Array(values.length);
+  for (let i = 0; i < order.length;) {
+    let j = i;
+    while (j + 1 < order.length && values[order[j + 1]] === values[order[i]]) j++;
+    for (let k = i; k <= j; k++) ranks[order[k]] = (i + j) / 2 + 1;
+    i = j + 1;
+  }
+  return ranks;
+}
+/** Per-aircraft metrics for the Health Index; aircraft with fewer than MIN_ACTIVE_MONTHS active months are left out. */
+function calcAircraftMetrics(f) {
+  const groups = new Map();
+  selectEvents(f).forEach(r => (groups.get(r.aircraft) || groups.set(r.aircraft, []).get(r.aircraft)).push(r));
+  const out = [];
+  state.aircraft.forEach(a => {
+    if (f.aircraft !== 'all' && a.id !== f.aircraft) return;
+    const expo = calcExposure(f.from, f.to + 1, a.id);
+    if (expo.departures < MIN_ACTIVE_MONTHS * a.dep) return;
+    const list = groups.get(a.id) || [], n = list.length;
+    const safety = meanOrNull(list.filter(r => r.safety !== null).map(r => r.safety));
+    out.push({ aircraft: a.id, events: n, fh: expo.fh, fc: expo.fc, departures: expo.departures,
+      utilization: expo.fc > 0 ? expo.fh / expo.fc : null,
+      fhPerDay: expo.fh / (expo.departures / a.dep * DAYS_PER_MONTH),
+      defectRate: expo.fh > 0 ? 1000 * n / expo.fh : null,
+      tdr: 100 * list.filter(r => r.techDelay).length / expo.departures,
+      urr: expo.fh > 0 ? 1000 * list.filter(r => r.removal).length / expo.fh : null,
+      highPct: n ? 100 * list.filter(r => r.severity === 'High').length / n : null,
+      safety, safetyGap: safety === null ? null : 100 - safety });
+  });
+  return out;
+}
+/** Health Index 0-100 (higher = healthier) = 100 − weighted percentile rank of each metric inside the selected fleet. */
+function calcHealthIndex(metrics) {
+  const n = metrics.length;
+  const active = HEALTH_WEIGHTS.filter(w => metrics.filter(m => m[w.key] !== null).length > 1);
+  if (n < 2 || !active.length) return metrics.map(m => ({ ...m, health: null, rank: null }));
+  const pct = {};
+  active.forEach(w => {
+    const idx = metrics.map((_, i) => i).filter(i => metrics[i][w.key] !== null);
+    const ranks = averageRanks(idx.map(i => metrics[i][w.key]));
+    pct[w.key] = new Array(n).fill(50);
+    idx.forEach((i, k) => { pct[w.key][i] = 100 * (ranks[k] - 1) / (idx.length - 1); });
+  });
+  const totalWeight = active.reduce((s, w) => s + w.weight, 0);
+  const scored = metrics.map((m, i) => ({ ...m, health: 100 - active.reduce((s, w) => s + w.weight * pct[w.key][i], 0) / totalWeight }));
+  [...scored].sort((a, b) => a.health - b.health).forEach((m, i) => { m.rank = i + 1; });
+  return scored;
+}
+function calcFleetQuality(events, expo) {
+  const n = events.length, rated = events.filter(r => r.effectiveness);
+  const share = name => rated.length ? 100 * rated.filter(r => r.effectiveness === name).length / rated.length : null;
+  return {
+    defectRate: expo.fh > 0 ? 1000 * n / expo.fh : null,
+    highPct: n ? 100 * events.filter(r => r.severity === 'High').length / n : null,
+    effectivePct: share('Effective'), needsImprovementPct: share('Needs Improvement'),
+    safety: meanOrNull(events.filter(r => r.safety !== null).map(r => r.safety)),
+    inspection: meanOrNull(events.filter(r => r.inspection !== null).map(r => r.inspection)),
+    utilization: expo.fc > 0 ? expo.fh / expo.fc : null
+  };
+}
+/** Monthly mean and sample sd of a condition score; months with fewer than MIN_QUALITY_EVENTS events are flagged invalid. */
+function calcQualitySeries(events, key) {
+  const byMonth = new Map();
+  events.forEach(r => { if (r[key] !== null) (byMonth.get(monthKey(r.day)) || byMonth.set(monthKey(r.day), []).get(monthKey(r.day))).push(r[key]); });
+  return new Map([...byMonth].map(([k, v]) => [k, { n: v.length, mean: mean(v), sd: v.length > 1 ? sampleSd(v) : null, valid: v.length >= MIN_QUALITY_EVENTS }]));
+}
+
+/* ---------- Rendering helpers ---------- */
+function ataLabel(ata) { return 'ATA ' + ata + (state.subsystem.get(ata) ? ' · ' + state.subsystem.get(ata) : ''); }
+function sparkline(values, color) {
+  const v = values.filter(x => x !== null);
+  if (v.length < 2) return '<svg class="spark"></svg>';
+  const min = Math.min(...v), max = Math.max(...v), span = max - min || 1;
+  const pts = values.map((x, i) => x === null ? null : (i / (values.length - 1) * 100).toFixed(1) + ',' + (26 - (x - min) / span * 24).toFixed(1)).filter(Boolean);
+  return '<svg class="spark" viewBox="0 0 100 28" preserveAspectRatio="none"><polyline fill="none" stroke="' + color + '" stroke-width="1.5" vector-effect="non-scaling-stroke" points="' + pts.join(' ') + '"/></svg>';
+}
+function deltaText(cur, prev, higherIsBetter, d, unit) {
+  if (cur === null || prev === null) return '<span class="muted">vs previous period: n/a</span>';
+  const diff = cur - prev;
+  if (Math.abs(diff) < Math.pow(10, -d) / 2) return '<span class="muted">■ no change vs previous period</span>';
+  const better = (diff > 0) === higherIsBetter;
+  return '<span class="' + (better ? 'good' : 'bad') + '">' + (diff > 0 ? '▲ ' : '▼ ') + fmt(Math.abs(diff), d) + unit + ' vs previous period</span>';
+}
+function chartDefaults() {
+  Chart.defaults.color = cssVar('--text2'); Chart.defaults.borderColor = cssVar('--grid');
+  Chart.defaults.font.family = "'JetBrains Mono', monospace"; Chart.defaults.font.size = 11;
+}
+const axisOpts = (title, extra = {}) => ({ grid: { color: cssVar('--grid') }, title: title ? { display: true, text: title } : undefined, ...extra });
+const lineDash = [6, 4];
+
+/* ---------- Rendering: Fleet Overview ---------- */
+function renderOverview() {
+  const f = state.filters, p = state.params;
+  const events = selectEvents(f);
+  const expo = calcExposure(f.from, f.to + 1, f.aircraft);
+  const cur = calcKpis(events, expo, p.tdrScale);
+  const len = f.to - f.from + 1;
+  const prevFilters = { ...f, from: f.from - len, to: f.from - 1 };
+  const prevExpo = calcExposure(prevFilters.from, prevFilters.to + 1, f.aircraft);
+  const prev = prevExpo.departures > 0 ? calcKpis(selectEvents(prevFilters), prevExpo, p.tdrScale) : { dr: null, tdr: null, urr: null, mtbur: null };
+  const series = calcMonthlySeries(f, p.minFh);
+  const visible = series.filter(m => monthStart(m.key + 1) > f.from && monthStart(m.key) <= f.to);
+  const spark = fn => sparkline(visible.map(m => m.valid ? fn(m.kpi) : null), cssVar('--grey'));
+  const rep = calcRepetitive(events, state.rep.days, state.rep.cycles), near = calcRepetitive(events, NEAR_DAYS, null);
+  const breaches = latestUclBreaches(series, f);
+  const fhNote = 'Based on cumulative flight hours in the dataset (see Data tab for utilization caveats).';
+  const onTarget = cur.dr !== null && cur.dr >= p.target;
+
+  const cards = [
+    { label: 'Dispatch Reliability', title: 'No technical-cancellation field in the data, so cancellations = 0.',
+      value: cur.dr === null ? '—' : fmt(cur.dr, 2) + '%', cls: cur.dr === null ? '' : onTarget ? 'good' : 'bad',
+      sub: cur.dr === null ? '' : (onTarget ? '▲ at or above target ' : '▼ below target ') + fmt(p.target, 1) + '%', delta: deltaText(cur.dr, prev.dr, true, 2, ' pp'), spark: spark(k => k.dr) },
+    { label: 'Technical delay rate /' + p.tdrScale + ' dep.', title: 'Technical delays longer than 15 minutes per ' + p.tdrScale + ' departures.',
+      value: fmt(cur.tdr, 2), cls: '', sub: fmt(cur.tech) + ' technical delays', delta: deltaText(cur.tdr, prev.tdr, false, 2, ''), spark: spark(k => k.tdr) },
+    { label: 'URR /1,000 FH', title: fhNote, value: fmt(cur.urr, 3), cls: '', sub: fmt(cur.removals) + ' unscheduled removals', delta: deltaText(cur.urr, prev.urr, false, 3, ''), spark: spark(k => k.urr) },
+    { label: 'MTBUR (FH)', title: fhNote, value: fmt(cur.mtbur, 0), cls: '', sub: fmt(expo.fh) + ' fleet FH', delta: deltaText(cur.mtbur, prev.mtbur, true, 0, ' FH'), spark: spark(k => k.mtbur) },
+    { label: 'Repetitive defects (' + state.rep.days + ' d / ' + state.rep.cycles + ' cyc)', title: 'Episodes of 3 events, same aircraft and ATA, within the window.',
+      value: fmt(rep.episodes.length), cls: rep.episodes.length ? 'bad' : 'good', sub: (rep.episodes.length ? '▲ ' : '■ ') + fmt(near.episodes.length) + ' near-repetitive (≤' + NEAR_DAYS + ' d)', delta: '', spark: '' },
+    { label: 'ATAs above UCL', title: 'Latest month with sufficient exposure, k = ' + p.k + ' sigma.',
+      value: fmt(breaches.length) + ' / ' + fmt(new Set(state.rows.map(r => r.ata)).size), cls: breaches.length ? 'bad' : 'good',
+      sub: breaches.length ? '▲ ' + breaches.map(b => 'ATA ' + escapeHtml(b.ata)).join(', ') : '■ none', delta: '', spark: '' }
+  ];
+  $('kpiCards').innerHTML = cards.map(c => '<div class="card kpi" title="' + escapeHtml(c.title) + '"><div class="label">' + escapeHtml(c.label) +
+    '</div><div class="value ' + c.cls + '">' + c.value + '</div><div class="sub">' + c.sub + '</div><div class="sub">' + c.delta + '</div>' + c.spark + '</div>').join('');
+
+  renderDrChart(visible);
+  renderAlertList(breaches, rep, series);
+  renderParetoChart('chParetoMini', 'ata', 'events', events, true);
+}
+function latestUclBreaches(series, f) {
+  const out = [];
+  const inRange = series.filter(m => monthStart(m.key + 1) > f.from && monthStart(m.key) <= f.to);
+  const latest = [...inRange].reverse().find(m => m.valid);
+  if (!latest) return out;
+  const atas = [...new Set(state.rows.map(r => r.ata))].sort();
+  atas.forEach(ata => {
+    const u = calcUcl(series, ata, state.params.k);
+    const rate = u.rates[series.indexOf(latest)];
+    if (u.ucl !== null && rate !== null && rate > u.ucl) out.push({ ata, rate, ucl: u.ucl, month: latest.label });
+  });
+  return out;
+}
+function monthlyLine(id, visible, getter, label, ref, yTitle) {
+  destroyChart(id);
+  const labels = visible.map(m => m.label), val = m => getter(m.kpi);
+  const datasets = [
+    { label, data: visible.map(m => m.valid ? val(m) : null), borderColor: cssVar('--good'), backgroundColor: cssVar('--good'), pointRadius: 2, spanGaps: false },
+    { label: 'Excluded (low exposure)', data: visible.map(m => !m.valid && val(m) !== null ? val(m) : null), borderColor: 'transparent', backgroundColor: cssVar('--grey'), pointRadius: 3, showLine: false }
+  ];
+  if (ref) datasets.push({ label: ref.label, data: labels.map(() => ref.value), borderColor: cssVar('--grey'), borderDash: lineDash, pointRadius: 0, borderWidth: 1.5 });
+  const range = validRange(visible.filter(m => m.valid).map(val).concat(ref ? [ref.value] : []), 0.3);
+  charts[id] = new Chart($(id), { type: 'line', data: { labels, datasets }, options: { responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { position: 'bottom' } }, scales: { x: axisOpts(null, { ticks: { maxTicksLimit: 8, maxRotation: 0 } }), y: axisOpts(yTitle, range) } } });
+}
+function renderDrChart(visible) {
+  const t = state.params.target;
+  monthlyLine('chDr', visible, k => k.dr, 'Dispatch Reliability %', { label: 'Target ' + fmt(t, 1) + '%', value: t }, '%');
+}
+/** Axis bounds from valid points only, so low-exposure months cannot blow up the scale (they are clipped). */
+function validRange(values, pad, zeroBased) {
+  const v = values.filter(x => x !== null && isFinite(x));
+  const lo = Math.min(...v), hi = Math.max(...v), margin = (hi - lo) * pad || 0.1;
+  return { min: zeroBased ? 0 : lo - margin, max: hi + margin };
+}
+function renderAlertList(breaches, rep, series) {
+  const items = [];
+  breaches.forEach(b => items.push('<li>▲ <b>' + escapeHtml(ataLabel(b.ata)) + '</b> above UCL in ' + escapeHtml(b.month) + ': ' + fmt(b.rate, 3) + ' vs UCL ' + fmt(b.ucl, 3) + ' /1,000 FH</li>'));
+  rep.episodes.slice(0, 8).forEach(e => items.push('<li>▲ Repetitive defect: aircraft <b>' + escapeHtml(e.aircraft) + '</b>, ' + escapeHtml(ataLabel(e.ata)) + ', ' + e.count + ' events ' + dayIso(e.from) + ' to ' + dayIso(e.to) + '</li>'));
+  $('alertList').innerHTML = items.length ? items.join('') : '<li class="ok">■ No active alerts for the current filters.</li>';
+}
+
+/* ---------- Rendering: Dispatch & Delays, Components, Repetitive Defects ---------- */
+const cardHtml = c => '<div class="card kpi" title="' + escapeHtml(c.title || '') + '"><div class="label">' + escapeHtml(c.label) +
+  '</div><div class="value ' + (c.cls || '') + '">' + c.value + '</div><div class="sub">' + (c.sub || '') + '</div></div>';
+const visibleMonths = (series, f) => series.filter(m => monthStart(m.key + 1) > f.from && monthStart(m.key) <= f.to);
+function barChart(id, labels, values, opts = {}) {
+  destroyChart(id);
+  const horizontal = !!opts.horizontal;
+  const catTicks = { ticks: opts.manyLabels ? { maxRotation: 0, maxTicksLimit: 8 } : { maxRotation: 0, autoSkip: false } };
+  charts[id] = new Chart($(id), { type: 'bar', data: { labels, datasets: [{ label: opts.label || '', data: values, backgroundColor: opts.colors || cssVar('--grey') }] },
+    options: { responsive: true, maintainAspectRatio: false, indexAxis: horizontal ? 'y' : 'x', plugins: { legend: { display: false } },
+      scales: { x: axisOpts(horizontal ? opts.title : null, { beginAtZero: true, ...(horizontal ? {} : catTicks) }),
+        y: axisOpts(horizontal ? null : opts.title, { beginAtZero: true, ...(horizontal ? catTicks : {}) }) } } });
+}
+
+function renderDispatch() {
+  const f = state.filters, p = state.params;
+  const events = selectEvents(f), expo = calcExposure(f.from, f.to + 1, f.aircraft), cur = calcKpis(events, expo, p.tdrScale);
+  const tech = events.filter(r => r.techDelay), minutes = tech.reduce((s, r) => s + r.delay, 0);
+  const onTarget = cur.dr !== null && cur.dr >= p.target;
+  $('dTarget').value = p.target; $('dScale').value = String(p.tdrScale);
+  $('delayCards').innerHTML = [
+    { label: 'Dispatch Reliability', value: fmt(cur.dr, 2) + '%', cls: cur.dr === null ? '' : onTarget ? 'good' : 'bad',
+      sub: cur.dr === null ? '' : (onTarget ? '▲ at or above target ' : '▼ below target ') + fmt(p.target, 1) + '%', title: 'No cancellation field exists, so cancellations = 0.' },
+    { label: 'Technical delay rate /' + p.tdrScale + ' dep.', value: fmt(cur.tdr, 2), sub: fmt(tech.length) + ' technical delays' },
+    { label: 'Technical delay minutes', value: fmt(minutes), sub: fmt(expo.departures) + ' departures' },
+    { label: 'Average technical delay (min)', value: fmt(tech.length ? minutes / tech.length : null, 1), sub: 'per technical delay' }
+  ].map(cardHtml).join('');
+
+  const visible = visibleMonths(calcMonthlySeries(f, p.minFh), f);
+  renderDrChartAt('chDDr', visible);
+  $('dTdrTitle').textContent = 'Technical delay rate by month (per ' + fmt(p.tdrScale) + ' departures)';
+  monthlyLine('chDTdr', visible, k => k.tdr, 'Technical delay rate', null, 'per ' + fmt(p.tdrScale));
+
+  const byAta = new Map();
+  tech.forEach(r => byAta.set(r.ata, (byAta.get(r.ata) || 0) + r.delay));
+  const atas = [...byAta.keys()].sort((a, b) => a - b);
+  barChart('chDMin', atas.map(a => 'ATA ' + a), atas.map(a => byAta.get(a)), { title: 'minutes' });
+
+  const sevOrder = ['Low', 'Medium', 'High'].filter(s => state.rows.some(r => r.severity === s));
+  const sevCounts = sevOrder.map(s => tech.filter(r => r.severity === s).length);
+  barChart('chDSev', sevOrder, sevCounts, { title: 'delays', colors: sevOrder.map(s => s === 'High' ? cssVar('--alert') : cssVar('--grey')) });
+
+  const top = calcTopAircraftTdr(f, p.tdrScale, 10);
+  $('dTopTitle').textContent = 'Top 10 aircraft by technical delay rate (per ' + fmt(p.tdrScale) + ' departures)';
+  $('dTopNote').textContent = 'Only aircraft with at least 3 active months in the selected period are ranked. Fleet rate: ' + fmt(cur.tdr, 2) + '.';
+  barChart('chDTop', top.map(t => t.aircraft), top.map(t => t.tdr), { horizontal: true });
+}
+function renderDrChartAt(id, visible) {
+  const t = state.params.target;
+  monthlyLine(id, visible, k => k.dr, 'Dispatch Reliability %', { label: 'Target ' + fmt(t, 1) + '%', value: t }, '%');
+}
+
+const COMP_COLUMNS = [['pn', 'Part number'], ['ata', 'ATA'], ['removals', 'Removals', 1], ['urr', 'URR /1,000 FH', 1], ['mtbur', 'MTBUR (FH)', 1],
+  ['mttr', 'MTTR (h)', 1], ['beta', 'Weibull <span class="gr">β</span>', 1], ['eta', 'Weibull <span class="gr">η</span> (FH)', 1], ['strategy', 'Strategy']];
+function sortComponents(comps) {
+  const { sortKey, sortDir } = state.comp;
+  const isNone = v => v === null || v === undefined;
+  return [...comps].sort((a, b) => {
+    const x = a[sortKey], y = b[sortKey];
+    if (isNone(x) || isNone(y)) return isNone(x) - isNone(y);
+    return (typeof x === 'string' ? x.localeCompare(y) : x - y) * sortDir;
+  });
+}
+function renderComponents() {
+  const f = state.filters, expo = calcExposure(f.from, f.to + 1, f.aircraft);
+  const comps = calcComponents(selectEvents(f), expo.fh);
+  const sorted = sortComponents(comps);
+  const arrow = key => state.comp.sortKey === key ? (state.comp.sortDir > 0 ? ' ▲' : ' ▼') : '';
+  const cell = (c, key) => {
+    const v = c[key];
+    if (key === 'pn' || key === 'strategy' || key === 'ata') return escapeHtml(v === null ? '—' : v);
+    return fmt(v, key === 'urr' ? 3 : key === 'beta' || key === 'mttr' ? 2 : 0);
+  };
+  $('compTable').innerHTML = '<tr>' + COMP_COLUMNS.map(([k, label, num]) => '<th data-sort="' + k + '" class="' + (num ? 'num' : '') + '">' + label + arrow(k) + '</th>').join('') + '</tr>' +
+    (sorted.map(c => '<tr>' + COMP_COLUMNS.map(([k, , num]) => '<td class="' + (num ? 'num' : '') + '">' + cell(c, k) + '</td>').join('') + '</tr>').join('') ||
+      '<tr><td colspan="' + COMP_COLUMNS.length + '" class="muted">No events for the current filters.</td></tr>');
+
+  const byMtbur = comps.filter(c => c.mtbur !== null).sort((a, b) => a.mtbur - b.mtbur);
+  const avgMtbur = byMtbur.length ? mean(byMtbur.map(c => c.mtbur)) : null;
+  $('mtburNote').textContent = avgMtbur === null ? '' : 'Orange = below the average across part numbers (' + fmt(avgMtbur) + ' FH).';
+  barChart('chCMtbur', byMtbur.map(c => c.pn), byMtbur.map(c => c.mtbur), { horizontal: true, title: 'FH',
+    colors: byMtbur.map(c => c.mtbur < avgMtbur ? cssVar('--alert') : cssVar('--grey')) });
+  renderJackKnife(comps);
+  renderReliabilityCurve(comps);
+}
+const pnLabelPlugin = { id: 'pnLabels', afterDatasetsDraw(chart) {
+  const meta = chart.getDatasetMeta(0), labels = chart.data.datasets[0].labels, ctx = chart.ctx;
+  ctx.save(); ctx.fillStyle = cssVar('--text2'); ctx.font = "9px 'JetBrains Mono', monospace";
+  meta.data.forEach((pt, i) => ctx.fillText(labels[i], pt.x + 6, pt.y - 5));
+  ctx.restore();
+} };
+function renderJackKnife(comps) {
+  destroyChart('chCJk');
+  const pts = comps.filter(c => c.urr !== null && c.mttr !== null);
+  if (pts.length < 2) return;
+  const mx = mean(pts.map(c => c.urr)), my = mean(pts.map(c => c.mttr));
+  const rx = validRange(pts.map(c => c.urr), 0.15), ry = validRange(pts.map(c => c.mttr), 0.15);
+  const quadrant = c => c.urr > mx && c.mttr > my ? 'high rate, long repairs' : c.urr <= mx && c.mttr <= my ? 'low rate, short repairs' : 'mixed';
+  const colors = pts.map(c => c.urr > mx && c.mttr > my ? cssVar('--alert') : c.urr <= mx && c.mttr <= my ? cssVar('--good') : cssVar('--grey'));
+  charts.chCJk = new Chart($('chCJk'), { type: 'scatter', plugins: [pnLabelPlugin], data: { datasets: [
+    { label: 'Part numbers', data: pts.map(c => ({ x: c.urr, y: c.mttr })), labels: pts.map(c => c.pn), backgroundColor: colors, pointRadius: 5 },
+    { label: 'Mean MTTR', type: 'line', data: [{ x: rx.min, y: my }, { x: rx.max, y: my }], borderColor: cssVar('--grey'), borderDash: lineDash, pointRadius: 0, borderWidth: 1 },
+    { label: 'Mean URR', type: 'line', data: [{ x: mx, y: ry.min }, { x: mx, y: ry.max }], borderColor: cssVar('--grey'), borderDash: lineDash, pointRadius: 0, borderWidth: 1 } ] },
+    options: { responsive: true, maintainAspectRatio: false, layout: { padding: { right: 40 } },
+      plugins: { legend: { display: false }, tooltip: { filter: i => i.datasetIndex === 0, callbacks: {
+        label: c => pts[c.dataIndex].pn + ' · URR ' + fmt(c.parsed.x, 3) + ' · MTTR ' + fmt(c.parsed.y, 2) + ' h · ' + quadrant(pts[c.dataIndex]) } } },
+      scales: { x: axisOpts('URR per 1,000 FH', rx), y: axisOpts('MTTR (h)', ry) } } });
+}
+function renderReliabilityCurve(comps) {
+  destroyChart('chCRel');
+  const fitted = comps.filter(c => c.weibull).sort((a, b) => a.pn.localeCompare(b.pn));
+  $('cPn').innerHTML = fitted.map(c => '<option value="' + escapeHtml(c.pn) + '">' + escapeHtml(c.pn) + '</option>').join('');
+  const sel = fitted.find(c => c.pn === state.comp.pn) || fitted[0];
+  if (!sel) { $('relNote').textContent = 'Not enough removal intervals (at least 3 per part number) for the current filters.'; return; }
+  state.comp.pn = sel.pn; $('cPn').value = sel.pn;
+  const w = sel.weibull, tMax = w.points[w.points.length - 1].t * 1.1;
+  const curve = Array.from({ length: 61 }, (_, i) => { const t = tMax * i / 60; return { x: t, y: 100 * Math.exp(-Math.pow(t / w.eta, w.beta)) }; });
+  charts.chCRel = new Chart($('chCRel'), { type: 'scatter', data: { datasets: [
+    { label: 'Weibull fit', type: 'line', data: curve, borderColor: cssVar('--good'), pointRadius: 0, borderWidth: 2 },
+    { label: 'Observed intervals', data: w.points.map(p => ({ x: p.t, y: 100 * (1 - p.F) })), backgroundColor: cssVar('--grey'), pointRadius: 3 } ] },
+    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } },
+      scales: { x: axisOpts('FH between unscheduled removals', { min: 0 }), y: axisOpts('Reliability %', { min: 0, max: 100 }) } } });
+  $('relNote').innerHTML = escapeHtml(sel.pn) + ': β ' + fmt(w.beta, 2) + ', η ' + fmt(w.eta) + ' FH, ' + w.n + ' intervals → <b>' + w.strategy + '</b>.';
+}
+
+function renderRepetitive() {
+  const f = state.filters, { days, cycles } = state.rep;
+  $('rDays').value = days; $('rCycles').value = cycles; $('rDaysVal').textContent = days; $('rCyclesVal').textContent = cycles;
+  const events = selectEvents(f);
+  const rep = calcRepetitive(events, days, cycles), near = calcRepetitive(events, NEAR_DAYS, null);
+  $('repCards').innerHTML = [
+    { label: 'Episodes', value: fmt(rep.episodes.length), cls: rep.episodes.length ? 'bad' : 'good', sub: (rep.episodes.length ? '▲ ' : '■ ') + fmt(rep.windows) + (rep.windows === 1 ? ' window' : ' overlapping windows') },
+    { label: 'Aircraft affected', value: fmt(new Set(rep.episodes.map(e => e.aircraft)).size), sub: 'of ' + fmt(new Set(events.map(e => e.aircraft)).size) + ' with events' },
+    { label: 'Near-repetitive (≤' + NEAR_DAYS + ' d)', value: fmt(near.episodes.length), sub: fmt(near.windows) + ' windows' }
+  ].map(cardHtml).join('');
+  const ranked = [...rep.episodes].sort((a, b) => b.count - a.count || a.days - b.days);
+  $('repTable').innerHTML = '<tr><th>Aircraft</th><th>ATA</th><th class="num">Events</th><th>From</th><th>To</th><th class="num">Δ days</th><th class="num">Δ cycles</th></tr>' +
+    (ranked.slice(0, 50).map(e => '<tr><td>' + escapeHtml(e.aircraft) + '</td><td>' + escapeHtml(ataLabel(e.ata)) + '</td><td class="num">' + e.count + '</td><td>' + dayIso(e.from) +
+      '</td><td>' + dayIso(e.to) + '</td><td class="num">' + fmt(e.days) + '</td><td class="num">' + fmt(e.cycles) + '</td></tr>').join('') ||
+      '<tr><td colspan="7" class="muted">No episodes under the current limits.</td></tr>') +
+    (ranked.length > 50 ? '<tr><td colspan="7" class="muted">Showing 50 of ' + ranked.length + ' episodes.</td></tr>' : '');
+  renderHeatmap(events, new Set(rep.episodes.map(e => e.aircraft + '|' + e.ata)));
+}
+function renderHeatmap(events, repPairs) {
+  const counts = new Map(), totals = new Map();
+  events.forEach(r => {
+    const k = r.aircraft + '|' + r.ata;
+    counts.set(k, (counts.get(k) || 0) + 1); totals.set(r.aircraft, (totals.get(r.aircraft) || 0) + 1);
+  });
+  const aircraft = [...totals].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, 20).map(x => x[0]);
+  const atas = [...new Set(events.map(r => r.ata))].sort((a, b) => a - b);
+  const max = Math.max(1, ...aircraft.flatMap(a => atas.map(t => counts.get(a + '|' + t) || 0)));
+  $('heatmap').innerHTML = '<tr><th>Aircraft</th>' + atas.map(t => '<th>ATA ' + escapeHtml(t) + '</th>').join('') + '</tr>' +
+    aircraft.map(a => '<tr><th>' + escapeHtml(a) + '</th>' + atas.map(t => {
+      const n = counts.get(a + '|' + t) || 0, rep = repPairs.has(a + '|' + t);
+      return '<td class="cell' + (rep ? ' rep' : '') + '" style="background:rgba(107,122,140,' + (n ? (0.12 + 0.7 * n / max).toFixed(2) : 0.05) + ')">' + n + (rep ? ' ▲' : '') + '</td>';
+    }).join('') + '</tr>').join('');
+}
+
+/* ---------- Rendering: Aircraft ---------- */
+const RANK_TABLE_ROWS = 15, WORST_SHARE = 0.1;
+const fmtPct = (v, d = 1) => v === null ? '—' : fmt(v, d) + '%';
+const FH_CAVEAT = 'Based on cumulative flight hours in the dataset (see Data tab for utilization caveats).';
+
+function renderAircraft() {
+  const f = state.filters;
+  const events = selectEvents(f), expo = calcExposure(f.from, f.to + 1, f.aircraft), q = calcFleetQuality(events, expo);
+  $('fleetQualityCards').innerHTML = [
+    { label: 'Defect rate /1,000 FH', title: FH_CAVEAT, value: fmt(q.defectRate, 3), sub: fmt(events.length) + ' events' },
+    { label: 'High-severity share', value: fmtPct(q.highPct), sub: 'of all events' },
+    { label: 'Maintenance effective', value: fmtPct(q.effectivePct), sub: (q.needsImprovementPct > q.effectivePct ? '<span class="bad">▲ ' : '<span>') + fmtPct(q.needsImprovementPct) + ' need improvement</span>' },
+    { label: 'Avg safety score', value: fmt(q.safety, 1), sub: 'event-level mean' },
+    { label: 'Avg inspection score', value: fmt(q.inspection, 1), sub: 'event-level mean' },
+    { label: 'FH per cycle', title: FH_CAVEAT, value: fmt(q.utilization, 2), sub: fmt(expo.fh) + ' FH · ' + fmt(expo.fc) + ' FC' }
+  ].map(cardHtml).join('');
+
+  const metrics = calcHealthIndex(calcAircraftMetrics(f));
+  const ranked = [...metrics].sort((a, b) => (a.health === null) - (b.health === null) || a.health - b.health);
+  const sel = metrics.find(m => m.aircraft === state.acSel) || ranked[0] || null;
+  if (sel) state.acSel = sel.aircraft;
+  renderRankTable(ranked, sel);
+  renderAircraftScatter(metrics, sel);
+  renderAircraftDetail(metrics, sel);
+  renderQualityChart(events);
+  renderAtaRate(events, expo);
+}
+function renderRankTable(ranked, sel) {
+  const worstCount = Math.max(1, Math.ceil(ranked.length * WORST_SHARE));
+  const rows = ranked.slice(0, RANK_TABLE_ROWS).map(m => {
+    const worst = m.rank !== null && m.rank <= worstCount;
+    return '<tr data-aircraft="' + escapeHtml(m.aircraft) + '" class="pick' + (sel && sel.aircraft === m.aircraft ? ' sel' : '') + '"><td class="num">' + (m.rank === null ? '—' : m.rank) +
+      '</td><td>' + escapeHtml(m.aircraft) + '</td><td class="num">' + (m.health === null ? '—' : fmt(m.health, 1) + ' <span class="hbar"><i class="' + (worst ? 'w' : '') + '" style="width:' + Math.max(2, m.health) + '%"></i></span>') +
+      (worst ? ' <span class="bad">▼</span>' : '') + '</td><td class="num">' + fmt(m.defectRate, 3) + '</td><td class="num">' + fmt(m.tdr, 2) + '</td><td class="num">' + fmt(m.urr, 3) +
+      '</td><td class="num">' + fmtPct(m.highPct, 0) + '</td><td class="num">' + fmt(m.safety, 1) + '</td></tr>';
+  }).join('');
+  $('rankTable').innerHTML = '<tr><th class="num">Rank</th><th>Aircraft</th><th class="num">Health Index</th><th class="num">Defects /1,000 FH</th><th class="num">Delays /100 dep.</th><th class="num">URR</th><th class="num">High sev.</th><th class="num">Safety</th></tr>' +
+    (rows || '<tr><td colspan="8" class="muted">No aircraft with at least ' + MIN_ACTIVE_MONTHS + ' active months in the selected period.</td></tr>');
+  $('rankNote').innerHTML = (ranked.length ? 'Showing the ' + Math.min(RANK_TABLE_ROWS, ranked.length) + ' lowest of ' + ranked.length + ' aircraft (rank 1 = least healthy, ▼ = worst 10 %). Click a row for details. ' : '') +
+    (ranked.length === 1 ? 'The index needs at least 2 aircraft to rank. ' : '') +
+    '<br>Health Index = 100 − weighted percentile rank within the selected fleet. Weights: ' + HEALTH_WEIGHTS.map(w => w.weight + '% ' + w.label).join(' · ') + '. Aircraft with fewer than ' + MIN_ACTIVE_MONTHS + ' active months are excluded.';
+}
+function renderAircraftScatter(metrics, sel) {
+  destroyChart('chAcScatter');
+  const pts = metrics.filter(m => isFinite(m.fhPerDay) && m.defectRate !== null);
+  if (!pts.length) return;
+  const worstCount = Math.max(1, Math.ceil(pts.length * WORST_SHARE));
+  const isWorst = m => m.rank !== null && m.rank <= worstCount;
+  const isSel = m => sel && m.aircraft === sel.aircraft;
+  charts.chAcScatter = new Chart($('chAcScatter'), { type: 'scatter', data: { datasets: [{ label: 'Aircraft', data: pts.map(m => ({ x: m.fhPerDay, y: m.defectRate })),
+    backgroundColor: pts.map(m => isSel(m) ? cssVar('--good') : isWorst(m) ? cssVar('--alert') : cssVar('--grey')), pointRadius: pts.map(m => isSel(m) ? 7 : 4) }] },
+    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { callbacks: {
+      label: c => 'Aircraft ' + pts[c.dataIndex].aircraft + ' · ' + fmt(c.parsed.x, 1) + ' FH/day · ' + fmt(c.parsed.y, 3) + ' defects /1,000 FH · health ' + fmt(pts[c.dataIndex].health, 1) } } },
+      scales: { x: axisOpts('Flight hours per active day', validRange(pts.map(m => m.fhPerDay), 0.1)), y: axisOpts('Defects per 1,000 FH', validRange(pts.map(m => m.defectRate), 0.1, true)) } } });
+}
+function renderAircraftDetail(metrics, sel) {
+  const f = state.filters;
+  destroyChart('chAcMonthly');
+  $('aAircraft').innerHTML = [...metrics].sort((a, b) => a.aircraft.localeCompare(b.aircraft)).map(m => '<option value="' + escapeHtml(m.aircraft) + '">' + escapeHtml(m.aircraft) + '</option>').join('');
+  if (!sel) { $('acCards').innerHTML = '<p class="note">No aircraft with at least ' + MIN_ACTIVE_MONTHS + ' active months in the selected period.</p>'; return; }
+  $('aAircraft').value = sel.aircraft;
+  $('acCards').innerHTML = [
+    { label: 'Health Index', value: sel.health === null ? '—' : fmt(sel.health, 1), cls: sel.health !== null && sel.rank <= Math.max(1, Math.ceil(metrics.length * WORST_SHARE)) ? 'bad' : '',
+      sub: sel.rank === null ? 'needs ≥ 2 aircraft' : 'rank ' + sel.rank + ' of ' + metrics.length + ' (1 = least healthy)' },
+    { label: 'Defect rate /1,000 FH', title: FH_CAVEAT, value: fmt(sel.defectRate, 3), sub: fmt(sel.events) + ' events' },
+    { label: 'Technical delays /100 dep.', value: fmt(sel.tdr, 2), sub: fmt(sel.departures) + ' departures' },
+    { label: 'URR /1,000 FH', title: FH_CAVEAT, value: fmt(sel.urr, 3), sub: fmt(sel.fh) + ' FH' },
+    { label: 'High-severity share', value: fmtPct(sel.highPct, 0), sub: 'avg safety ' + fmt(sel.safety, 1) },
+    { label: 'FH per cycle', value: fmt(sel.utilization, 2), sub: fmt(sel.fc) + ' FC' }
+  ].map(cardHtml).join('');
+  const mine = selectEvents({ ...f, aircraft: sel.aircraft });
+  const startKey = monthKey(f.from), endKey = monthKey(f.to), counts = new Map();
+  mine.forEach(r => counts.set(monthKey(r.day), (counts.get(monthKey(r.day)) || 0) + 1));
+  const keys = Array.from({ length: endKey - startKey + 1 }, (_, i) => startKey + i);
+  barChart('chAcMonthly', keys.map(monthLabel), keys.map(k => counts.get(k) || 0), { title: 'events', manyLabels: true });
+}
+function renderQualityChart(events) {
+  destroyChart('chQuality');
+  const f = state.filters, series = calcQualitySeries(events, state.qMetric);
+  const keys = Array.from({ length: monthKey(f.to) - monthKey(f.from) + 1 }, (_, i) => monthKey(f.from) + i);
+  const at = k => (series.get(k) && series.get(k).valid) ? series.get(k) : null;
+  const band = sign => keys.map(k => at(k) && at(k).sd !== null ? at(k).mean + sign * at(k).sd : null);
+  const means = keys.map(k => at(k) ? at(k).mean : null);
+  const name = state.qMetric === 'safety' ? 'Safety score' : 'Inspection score';
+  charts.chQuality = new Chart($('chQuality'), { type: 'line', data: { labels: keys.map(monthLabel), datasets: [
+    { label: name + ' (monthly mean)', data: means, borderColor: cssVar('--good'), backgroundColor: cssVar('--good'), pointRadius: 2 },
+    { label: 'Mean + 1 sd', data: band(1), borderColor: cssVar('--grey'), borderDash: lineDash, pointRadius: 0, borderWidth: 1 },
+    { label: 'Mean − 1 sd', data: band(-1), borderColor: cssVar('--grey'), borderDash: lineDash, pointRadius: 0, borderWidth: 1 } ] },
+    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } },
+      scales: { x: axisOpts(null, { ticks: { maxTicksLimit: 8, maxRotation: 0 } }), y: axisOpts('score', validRange(band(1).concat(band(-1), means), 0.1)) } } });
+}
+function renderAtaRate(events, expo) {
+  const byAta = new Map();
+  events.forEach(r => byAta.set(r.ata, (byAta.get(r.ata) || 0) + 1));
+  const atas = [...byAta.keys()].sort((a, b) => a - b);
+  barChart('chAtaRate', atas.map(a => 'ATA ' + a), atas.map(a => expo.fh > 0 ? 1000 * byAta.get(a) / expo.fh : 0), { title: 'per 1,000 FH' });
+}
+
+/* ---------- Rendering: Pareto ---------- */
+function renderParetoChart(canvasId, dim, metric, events, single) {
+  destroyChart(canvasId);
+  const data = calcPareto(events, dim, metric);
+  const labels = data.map(d => dim === 'ata' ? 'ATA ' + d.key : d.key);
+  charts[canvasId] = new Chart($(canvasId), { type: 'bar', data: { labels, datasets: [{ label: metric, data: data.map(d => d.value),
+    backgroundColor: cssVar('--grey') }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } },
+    scales: { x: axisOpts(null, { ticks: { maxRotation: 0, autoSkip: false } }), y: axisOpts(null, { beginAtZero: true }) } } });
+  return data;
+}
+function renderPareto() {
+  const events = selectEvents(state.filters);
+  const { dim, metric } = state.pareto;
+  const data = renderParetoChart('chPBar', dim, metric, events, false);
+  destroyChart('chPCum');
+  const labels = data.map(d => dim === 'ata' ? 'ATA ' + d.key : d.key);
+  charts.chPCum = new Chart($('chPCum'), { type: 'line', data: { labels, datasets: [
+    { label: 'Cumulative %', data: data.map(d => d.cumPct), borderColor: cssVar('--good'), backgroundColor: cssVar('--good'), pointRadius: 3 },
+    { label: '80% reference', data: labels.map(() => 80), borderColor: cssVar('--grey'), borderDash: lineDash, pointRadius: 0, borderWidth: 1.5 } ] },
+    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } },
+      scales: { x: axisOpts(null, { ticks: { maxRotation: 0, autoSkip: false } }), y: axisOpts('%', { min: 0, max: 100 }) } } });
+  renderUcl();
+}
+function renderUcl() {
+  const f = state.filters, series = calcMonthlySeries(f, state.params.minFh);
+  const visible = series.filter(m => monthStart(m.key + 1) > f.from && monthStart(m.key) <= f.to);
+  const atas = [...new Set(state.rows.map(r => r.ata))].sort((a, b) => a - b).filter(a => f.ata === 'all' || a === f.ata);
+  $('uclGrid').innerHTML = atas.map(a => '<div class="card"><h3>' + escapeHtml(ataLabel(a)) + '</h3><div class="chart-box sm"><canvas id="chUcl' + escapeHtml(a) + '"></canvas></div><p class="note" id="uclNote' + escapeHtml(a) + '"></p></div>').join('');
+  const labels = visible.map(m => m.label);
+  atas.forEach(ata => {
+    const id = 'chUcl' + ata, u = calcUcl(series, ata, state.params.k);
+    const rates = visible.map(m => u.rates[series.indexOf(m)]);
+    const lowExposure = visible.map(m => !m.valid ? 1000 * m.events.filter(r => r.ata === ata).length / (m.expo.fh || NaN) : null).map(v => isFinite(v) ? v : null);
+    const breach = rates.map(r => r !== null && u.ucl !== null && r > u.ucl ? r : null);
+    destroyChart(id);
+    charts[id] = new Chart($(id), { type: 'line', data: { labels, datasets: [
+      { label: 'Rate /1,000 FH', data: rates, borderColor: cssVar('--good'), backgroundColor: cssVar('--good'), pointRadius: 1.5, borderWidth: 1.5 },
+      { label: 'Above UCL', data: breach, borderColor: 'transparent', backgroundColor: cssVar('--alert'), pointRadius: 5, showLine: false },
+      { label: 'Excluded', data: lowExposure, borderColor: 'transparent', backgroundColor: cssVar('--grey'), pointRadius: 2, showLine: false },
+      { label: 'Mean', data: labels.map(() => u.mu), borderColor: cssVar('--grey'), borderDash: [2, 3], pointRadius: 0, borderWidth: 1 },
+      { label: 'UCL (k=' + state.params.k + ')', data: labels.map(() => u.ucl), borderColor: cssVar('--alert'), borderDash: lineDash, pointRadius: 0, borderWidth: 1.5 } ] },
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } },
+        scales: { x: axisOpts(null, { ticks: { maxTicksLimit: 3, maxRotation: 0 } }), y: axisOpts(null, validRange(rates.concat(u.ucl), 0.15, true)) } } });
+    const n = breach.filter(v => v !== null).length;
+    $('uclNote' + ata).innerHTML = u.ucl === null ? 'Not enough base months.' : 'Mean ' + fmt(u.mu, 3) + ' · UCL ' + fmt(u.ucl, 3) + ' · <span class="' + (n ? 'bad' : 'good') + '">' + (n ? '▲ ' : '■ ') + n + ' months above UCL</span>';
+  });
+}
+
+/* ---------- Rendering: Data tab ---------- */
+function renderData() {
+  const rows = state.rows;
+  if (!rows.length) return;
+  const perDay = [...state.aircraft.values()].map(a => (a.h[a.h.length - 1] - a.h[0]) / Math.max(1, a.t[a.t.length - 1] - a.t[0]));
+  const impossible = perDay.filter(x => x > 24).length;
+  const fleetFc = [...state.aircraft.values()].reduce((s, a) => s + a.c[a.c.length - 1] - a.c[0], 0);
+  const perMonthFc = fleetFc / [...state.aircraft.values()].reduce((s, a) => s + (a.t[a.t.length - 1] - a.t[0]) / DAYS_PER_MONTH, 0);
+  const deps = [...state.aircraft.values()].map(a => a.dep).sort((a, b) => a - b), mid = deps.length >> 1;
+  const medianDep = deps.length % 2 ? deps[mid] : (deps[mid - 1] + deps[mid]) / 2;
+  $('qualityNotes').innerHTML = [
+    '<b>Utilization is not physically plausible:</b> ' + impossible + ' of ' + state.aircraft.size + ' aircraft accumulate more than 24 flight hours per day. Flight-hour-based metrics (URR, MTBUR, rates per 1,000 FH) are internally consistent but should not be read as absolute values.',
+    'Cumulative cycles imply about ' + fmt(perMonthFc) + ' cycles per aircraft per month versus a declared median of ' + fmt(medianDep) + ' departures per month.',
+    'Event density falls sharply over time. Monthly rates use interpolated exposure and months under the minimum threshold are excluded from alerts.',
+    'Columns not used: Flight_Hours (unrelated to cumulative hours), Aircraft_Age (changes within one aircraft), CNN_Feature_*.',
+    'Part numbers have almost unique serial numbers, so reliability is analyzed per part number, not per serial number.'
+  ].map(t => '<li>' + t + '</li>').join('');
+  const dep = [...state.aircraft.values()].reduce((s, a) => s + a.dep, 0);
+  const tech = rows.filter(r => r.techDelay).length;
+  const fcDr = 100 * (1 - tech / fleetFc);
+  const span = monthKey(state.bounds.max) - monthKey(state.bounds.min) + 1;
+  $('altDepartures').textContent = span + ' months × all aircraft → DR ' + fmt(100 * (1 - tech / (dep * span)), 2) + '%; cumulative cycles as departures → DR ' + fmt(fcDr, 2) + '%.';
+}
+async function runSelfTest() {
+  const table = $('selftestTable');
+  try {
+    const golden = await (await fetch('.tmp/kpi_golden.json')).json();
+    const all = { from: state.bounds.min, to: state.bounds.max, ata: 'all', aircraft: 'all', severity: 'all' };
+    const events = selectEvents(all), expo = calcExposure(-Infinity, Infinity, 'all'), k = calcKpis(events, expo, 100);
+    const pareto = calcPareto(events, 'ata', 'events');
+    const checks = [
+      ['Fleet FH', expo.fh, golden.fleet_fh], ['Departures', expo.departures, golden.departures],
+      ['Dispatch Reliability %', k.dr, golden.dispatch_reliability_pct], ['Technical delay rate /100', k.tdr, golden.tech_delay_rate_per_100],
+      ['URR /1,000 FH', k.urr, golden.urr_per_1000fh], ['MTBUR', k.mtbur, golden.mtbur_fh],
+      ['Repetitive 5 d windows', calcRepetitive(events, 5, null).windows, golden.repetitive_5d.windows],
+      ['Repetitive 10 cycles windows', calcRepetitive(events, null, 10).windows, golden.repetitive_10cyc.windows],
+      ['Near-repetitive 30 d windows', calcRepetitive(events, 30, null).windows, golden.near_repetitive_30d.windows],
+      ['Top Pareto ATA count', pareto[0].value, Math.max(...Object.values(golden.pareto_ata))],
+      ['Pareto final cumulative %', pareto[pareto.length - 1].cumPct, 100]];
+    const techEvents = events.filter(r => r.techDelay);
+    checks.push(['Technical delay minutes', techEvents.reduce((s, r) => s + r.delay, 0), golden.tech_delay_minutes]);
+    Object.entries(golden.tech_delay_minutes_by_ata).forEach(([ata, v]) =>
+      checks.push(['Delay minutes, ATA ' + ata, techEvents.filter(r => r.ata === ata).reduce((s, r) => s + r.delay, 0), v]));
+    const comps = new Map(calcComponents(events, expo.fh).map(c => [c.pn, c]));
+    Object.entries(golden.weibull_by_pn).forEach(([pn, g]) => {
+      checks.push(['Weibull β, ' + pn, comps.get(pn).weibull ? comps.get(pn).weibull.beta : null, g.beta]);
+      checks.push(['Weibull η, ' + pn, comps.get(pn).weibull ? comps.get(pn).weibull.eta : null, g.eta]);
+    });
+    Object.entries(golden.mttr_by_pn).forEach(([pn, v]) => checks.push(['MTTR, ' + pn, comps.get(pn).mttr, v]));
+    Object.entries(golden.mtbur_by_pn).forEach(([pn, v]) => checks.push(['MTBUR, ' + pn, comps.get(pn).mtbur, v]));
+    const fq = calcFleetQuality(events, expo), gq = golden.fleet_quality;
+    [['Defect rate /1,000 FH', fq.defectRate, gq.defect_rate_per_1000fh], ['High-severity %', fq.highPct, gq.high_severity_pct],
+      ['Maintenance effective %', fq.effectivePct, gq.effective_pct], ['Needs improvement %', fq.needsImprovementPct, gq.needs_improvement_pct],
+      ['Mean safety score', fq.safety, gq.mean_safety], ['Mean inspection score', fq.inspection, gq.mean_inspection]].forEach(c => checks.push(c));
+    const health = new Map(calcHealthIndex(calcAircraftMetrics(all)).map(m => [m.aircraft, m.health]));
+    checks.push(['Aircraft in Health Index', health.size, Object.keys(golden.health_index).length]);
+    Object.entries(golden.health_index).forEach(([ac, v]) => checks.push(['Health Index, aircraft ' + ac, health.has(ac) ? health.get(ac) : null, v]));
+    [['safety', golden.quality_safety_monthly], ['inspection', golden.quality_inspection_monthly]].forEach(([key, monthly]) => {
+      const valid = [...calcQualitySeries(events, key)].filter(([, s]) => s.valid);
+      checks.push(['Valid months, ' + key + ' trend', valid.length, Object.keys(monthly).length]);
+      valid.forEach(([k, s]) => {
+        const g = monthly[Math.floor(k / 12) + '-' + String(k % 12 + 1).padStart(2, '0')];
+        checks.push([key + ' mean ' + monthLabel(k), s.mean, g ? g.mean : null], [key + ' sd ' + monthLabel(k), s.sd, g ? g.sd : null]);
+      });
+    });
+    const series = calcMonthlySeries(all, state.params.minFh);
+    Object.entries(golden.ucl_by_ata).forEach(([ata, g]) => checks.push(['UCL k=3, ATA ' + ata, calcUcl(series, ata, 3).ucl, g.ucl3]));
+    table.innerHTML = '<tr><th>Check</th><th class="num">Dashboard</th><th class="num">Reference</th><th>Result</th></tr>' + checks.map(([name, a, b]) => {
+      const ok = Math.abs(a - b) <= 0.01;
+      return '<tr><td>' + escapeHtml(name) + '</td><td class="num">' + fmt(a, 3) + '</td><td class="num">' + fmt(b, 3) + '</td><td class="' + (ok ? 'pass' : 'fail') + '">' + (ok ? 'PASS' : 'FAIL') + '</td></tr>';
+    }).join('');
+    showSection('data');
+  } catch (e) {
+    table.innerHTML = '<tr><td class="fail">Self-test unavailable: ' + escapeHtml(e.message) + '. Serve the folder over HTTP and run the reference script first.</td></tr>';
+  }
+}
+
+/* ---------- Filters and navigation ---------- */
+function populateFilters() {
+  const opt = (v, t) => '<option value="' + escapeHtml(v) + '">' + escapeHtml(t) + '</option>';
+  const atas = [...new Set(state.rows.map(r => r.ata))].sort((a, b) => a - b);
+  $('fAta').innerHTML = opt('all', 'All') + atas.map(a => opt(a, ataLabel(a))).join('');
+  $('fAircraft').innerHTML = opt('all', 'All') + [...state.aircraft.keys()].sort().map(a => opt(a, a)).join('');
+  const sev = ['Low', 'Medium', 'High'].filter(s => state.rows.some(r => r.severity === s));
+  $('fSeverity').innerHTML = opt('all', 'All') + sev.map(s => opt(s, s)).join('');
+  $('fFrom').min = $('fTo').min = dayIso(state.bounds.min); $('fFrom').max = $('fTo').max = dayIso(state.bounds.max);
+  $('fFrom').value = dayIso(state.filters.from); $('fTo').value = dayIso(state.filters.to);
+}
+function onFilterChange() {
+  const from = dayNum($('fFrom').value), to = dayNum($('fTo').value);
+  if (!(from <= to)) { showNotif('error', 'The start date must not be after the end date.'); return; }
+  state.filters = { from, to, ata: $('fAta').value, aircraft: $('fAircraft').value, severity: $('fSeverity').value };
+  renderAll();
+}
+function showSection(id) {
+  document.querySelectorAll('main section').forEach(s => s.classList.toggle('active', s.id === 'sec-' + id));
+  document.querySelectorAll('#nav button').forEach(b => b.classList.toggle('active', b.dataset.section === id));
+  if (state.rows.length) renderActive();
+}
+function renderActive() {
+  chartDefaults();
+  const id = document.querySelector('main section.active').id;
+  const renderers = { 'sec-overview': renderOverview, 'sec-dispatch': renderDispatch, 'sec-components': renderComponents,
+    'sec-repetitive': renderRepetitive, 'sec-pareto': renderPareto, 'sec-aircraft': renderAircraft, 'sec-data': renderData };
+  renderers[id]();
+}
+const renderAll = renderActive;
+
+/* ---------- Wiring ---------- */
+function readFile(file) {
+  const reader = new FileReader();
+  reader.onload = e => { try { ingest(e.target.result); showNotif('ok', 'Loaded ' + file.name); } catch (err) { showNotif('error', err.message); } };
+  reader.onerror = () => showNotif('error', 'Could not read the file.');
+  reader.readAsText(file);
+}
+const THEME_KEY = 'fleet-reliability-theme';
+const systemTheme = () => window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+const currentTheme = () => document.documentElement.dataset.theme || systemTheme();
+function updateThemeButton() {
+  const next = currentTheme() === 'dark' ? 'light' : 'dark';
+  $('themeToggle').textContent = next === 'light' ? '☀ Light mode' : '☾ Dark mode';
+  $('themeToggle').setAttribute('aria-label', 'Switch to ' + next + ' mode');
+}
+function setTheme(theme) {
+  document.documentElement.dataset.theme = theme;
+  try { localStorage.setItem(THEME_KEY, theme); } catch (e) { /* storage unavailable: theme lasts for this visit only */ }
+  updateThemeButton();
+  if (state.rows.length) renderActive();
+}
+function restoreTheme() {
+  let saved = null;
+  try { saved = localStorage.getItem(THEME_KEY); } catch (e) { /* storage unavailable */ }
+  if (saved === 'light' || saved === 'dark') document.documentElement.dataset.theme = saved;
+  updateThemeButton();
+}
+function wire() {
+  restoreTheme();
+  $('themeToggle').addEventListener('click', () => setTheme(currentTheme() === 'dark' ? 'light' : 'dark'));
+  document.querySelectorAll('#nav button').forEach(b => b.addEventListener('click', () => showSection(b.dataset.section)));
+  ['fFrom', 'fTo', 'fAta', 'fAircraft', 'fSeverity'].forEach(id => $(id).addEventListener('change', onFilterChange));
+  $('dTarget').addEventListener('change', e => { state.params.target = Math.min(100, Math.max(90, +e.target.value || 99)); renderActive(); });
+  $('dScale').addEventListener('change', e => { state.params.tdrScale = +e.target.value; renderActive(); });
+  $('rDays').addEventListener('input', e => { state.rep.days = +e.target.value; renderRepetitive(); });
+  $('rCycles').addEventListener('input', e => { state.rep.cycles = +e.target.value; renderRepetitive(); });
+  $('cPn').addEventListener('change', e => { state.comp.pn = e.target.value; renderComponents(); });
+  $('compTable').addEventListener('click', e => {
+    const th = e.target.closest('th[data-sort]');
+    if (!th) return;
+    const key = th.dataset.sort;
+    state.comp.sortDir = state.comp.sortKey === key ? -state.comp.sortDir : (key === 'pn' || key === 'ata' || key === 'strategy' ? 1 : -1);
+    state.comp.sortKey = key;
+    renderComponents();
+  });
+  $('aAircraft').addEventListener('change', e => { state.acSel = e.target.value; renderAircraft(); });
+  $('qMetric').addEventListener('change', e => { state.qMetric = e.target.value; renderAircraft(); });
+  $('rankTable').addEventListener('click', e => {
+    const row = e.target.closest('tr[data-aircraft]');
+    if (row) { state.acSel = row.dataset.aircraft; renderAircraft(); }
+  });
+  $('pDim').addEventListener('change', e => { state.pareto.dim = e.target.value; renderPareto(); });
+  $('pMetric').addEventListener('change', e => { state.pareto.metric = e.target.value; renderPareto(); });
+  $('uK').addEventListener('change', e => { state.params.k = +e.target.value; renderPareto(); });
+  $('uMin').addEventListener('change', e => { state.params.minFh = Math.max(0, +e.target.value || 0); renderPareto(); });
+  const drop = $('drop'), input = $('fileInput');
+  drop.addEventListener('click', () => input.click());
+  input.addEventListener('change', e => e.target.files[0] && readFile(e.target.files[0]));
+  drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('over'); });
+  drop.addEventListener('dragleave', () => drop.classList.remove('over'));
+  drop.addEventListener('drop', e => { e.preventDefault(); drop.classList.remove('over'); e.dataTransfer.files[0] && readFile(e.dataTransfer.files[0]); });
+  // Charts measure axis labels once; redraw after web fonts load so labels are not clipped.
+  document.fonts && document.fonts.ready.then(() => state.rows.length && renderActive());
+  window.matchMedia('(prefers-color-scheme: light)').addEventListener('change', () => { updateThemeButton(); if (state.rows.length) renderActive(); });
+}
+
+wire();
+loadData().then(() => {
+  const initial = location.hash.slice(1);
+  if (document.getElementById('sec-' + initial)) showSection(initial); if (new URLSearchParams(location.search).has('selftest') && state.rows.length) runSelfTest(); });
+})();
+</script>
+</body>
+</html>

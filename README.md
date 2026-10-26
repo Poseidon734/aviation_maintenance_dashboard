@@ -1,5 +1,8 @@
 ![image alt](https://github.com/Poseidon734/aviation_maintenance_dashboard/blob/3ff4e4e0f719e8e57acbb3ab6c7d750e04908ffe/Screenshot_dashboard1.png)
 
+[**▶ Open the live dashboard**](https://poseidon734.github.io/aviation_maintenance_dashboard/)
+
+
 # Fleet Reliability Dashboard
 
 Single-file dashboard (`index.html`) that computes CAMO/MCC reliability KPIs in the browser from `aviation_fault_maintenance_dataset_enriched.csv`. 
